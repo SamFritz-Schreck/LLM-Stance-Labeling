@@ -1,6 +1,6 @@
 '''
 packages to install for WIRE environment:
-pip install -U transformers langchain accelerate bitsandbytes einops
+pip install transformers langchain accelerate bitsandbytes einops
 '''
 
 import os, re, pandas as pd, numpy as np, ast, json, string, logging, sys, warnings, time
@@ -67,25 +67,37 @@ def post_process_results(results):
     y_pred = []  
 
     # Words or phrases that indicate each stance category
-    disagree_indicators = ['against', 'denies', 'critical', 'deny', 'neg']
-    agree_indicators = ['support', 'for', 'pro ', 'positive']
+    disagree_indicators = ['against', 'denies', 'critical', 'deny', 'neg', 'oppose', 'opposes']
+    agree_indicators = ['support','supports', 'for', 'pro ', 'positive', 'agree', 'agrees']
     neutral_indicators = ['neutral', 'unrelated']
 
     # Iterate over LLM return in the results
     for word in results:  
         # Normalize the word to lower case and remove leading/trailing white spaces
-        normalized_word = word.strip().lower().split('\n')[0]
+        normalized_word = str(word).strip().lower()
 
-        # Check if the normalized word indicates a stance
         if any(indicator in normalized_word for indicator in disagree_indicators):
-            y_pred.append('disagree')
+            # If the word is also found in agree_indicators or neutral_indicators, label it as 'neutral'
+            if any(indicator in normalized_word for indicator in agree_indicators) or any(indicator in normalized_word for indicator in neutral_indicators):
+                y_pred.append('neutral')
+            else:
+                y_pred.append('disagree')
         elif any(indicator in normalized_word for indicator in neutral_indicators):
-            y_pred.append('neutral')
+            # If the word is also found in disagree_indicators or agree_indicators, label it as 'neutral'
+            if any(indicator in normalized_word for indicator in disagree_indicators) or any(indicator in normalized_word for indicator in agree_indicators):
+                y_pred.append('neutral')
+            else:
+                y_pred.append('neutral')
         elif any(indicator in normalized_word for indicator in agree_indicators):
-            y_pred.append('agree')
+            # If the word is also found in disagree_indicators or neutral_indicators, label it as 'neutral'
+            if any(indicator in normalized_word for indicator in disagree_indicators) or any(indicator in normalized_word for indicator in neutral_indicators):
+                y_pred.append('neutral')
+            else:
+                y_pred.append('agree')
         else:  
-            # If no specific stane label is found, label it as 'neutral'
+            # If no specific stance label is found, label it as 'neutral'
             y_pred.append('neutral')
+
 
     return y_pred
 
@@ -150,8 +162,8 @@ def create_context_analyze_chain(dataset, llm):
             template=context_template
         )
     elif dataset == 'election':
-        context_template = '''Stance classification is the task of determining the expressed or implied opinion, or stance, of a statement toward a certain, specified target. Analyze the following social media statement and determine its stance towards the provided politcian. Respond with a single word: "for", "against", "neutral", or "unrelated". Only return the stance as a single word, and no other text.
-        politcian: {event}
+        context_template = '''Stance classification is the task of determining the expressed or implied opinion, or stance, of a statement toward a certain, specified target. Analyze the following social media statement and determine its stance towards the provided politician. Respond with a single word: "for", "against", "neutral", or "unrelated". Only return the stance as a single word, and no other text.
+        politician: {event}
         statement: {statement}
         stance:'''
 
@@ -221,8 +233,8 @@ def create_context_question_chain(dataset, llm):
             template=context_template
         )
     elif dataset == 'election':
-        context_template = '''Stance classification is the task of determining the expressed or implied opinion, or stance, of a statement toward a certain, specified target. What is the stance of the following social media statement toward the following politcian? Respond with a single word: "for", "against", "neutral", or "unrelated". Only return the stance as a single word, and no other text.
-        politcian: {event}
+        context_template = '''Stance classification is the task of determining the expressed or implied opinion, or stance, of a statement toward a certain, specified target. What is the stance of the following social media statement toward the following politician? Respond with a single word: "for", "against", "neutral", or "unrelated". Only return the stance as a single word, and no other text.
+        politician: {event}
         statement: {statement}
         stance:'''
 
@@ -231,7 +243,7 @@ def create_context_question_chain(dataset, llm):
             template=context_template
         )
     elif dataset == 'srq':
-        context_template = '''Stance classification is the task of determining the expressed or implied opinion, or stance, of a statement toward a certain, specified target. What is the stance of the following reply to following social media statement about the following? Respond with a single word: "supports", "denies", "neutral", or "unrelated". Only return the stance as a single word, and no other text.
+        context_template = '''Stance classification is the task of determining the expressed or implied opinion, or stance, of a statement toward a certain, specified target. What is the stance of the following reply toward the following social media statement about the following event? Respond with a single word: "supports", "denies", "neutral", or "unrelated". Only return the stance as a single word, and no other text.
         event: {event}
         statement: {statement}
         reply: {reply}
@@ -355,7 +367,7 @@ def create_few_shot_chain(dataset, llm):
 
         prefix = """Stance classification is the task of determining the expressed or implied opinion, or stance, of a statement toward a certain, specified target. The following statemements are from social media posts expressing opinions about politicians. Each statement can either be for, against, neutral, or unrelated toward its associated politician."""
 
-        suffix = '''Analyze the following social media statement and determine its stance towards the provided politcian. Respond with a single word: "for", "against", "neutral", or "unrelated". Only return the stance as a single word, and no other text.
+        suffix = '''Analyze the following social media statement and determine its stance towards the provided politician. Respond with a single word: "for", "against", "neutral", or "unrelated". Only return the stance as a single word, and no other text.
         politician: {event}
         statement: {statement}
         stance:'''
@@ -729,6 +741,193 @@ def create_zero_shot_CoT_chain(dataset, llm):
 
     return llm_chain
 
+def create_coda_chain(dataset, llm):
+    ### CoDA chain
+
+    if dataset == 'srq':
+                # Linguist chain
+        linguist_template ='''Accurately and concisely explain the linguistic elements in the statment and its reply, and how these elements affect meaning, including grammatical structure, tense and inflection, virtual speech, rhetorical devices, lexical choices and so on. Do nothing else.
+        statement: {statement}
+        reply: {reply}
+        explanation:'''
+
+        linguist_prompt = PromptTemplate(
+                input_variables=["statement", "reply"],
+                template=linguist_template
+            )
+
+        linguist_chain = LLMChain(llm=llm, prompt=linguist_prompt, output_key="linguist_analysis")
+
+        # expert chain
+        expert_template ='''Accurately and concisely explain the key elements contained in the following statement and its reply, such as characters, events, parties, religions, etc. Also explain their relationship with {event}. Do nothing else.
+        statement: {statement}
+        reply: {reply}
+        explanation:'''
+
+        expert_prompt = PromptTemplate(
+                input_variables=["statement", "event", "reply"],
+                template=expert_template
+            )
+
+        expert_chain = LLMChain(llm=llm, prompt=expert_prompt, output_key="expert_analysis")
+
+        # user chain
+        user_template ='''Analyze the following statement and its reply, focusing on the content, hashtags, Internet slang and colloquialisms, emotional tone, implied meaning, and so on. Do nothing else.
+        statement: {statement}
+        reply: {reply}
+        explanation:'''
+
+        user_prompt = PromptTemplate(
+                input_variables=["statement", "event", "reply"],
+                template=user_template
+            )
+
+        user_chain = LLMChain(llm=llm, prompt=user_prompt, output_key="user_analysis")
+
+        # argument for chain
+        for_template ='''You think the attitude behind the following reply in a converation about {event} is in support of the following statement. Folloiwng the statement and reply are explanations of the statement and reply by various personas. Identify the top three pieces of evidence from these that best support your opinion and argue for your opinion.
+        statement: {statement}
+        reply: {reply}
+        linguist explanation: {linguist_analysis}
+        expert explanation: {expert_analysis}
+        heavy social media user explanation: {user_analysis}
+        opinion:'''
+
+        for_prompt = PromptTemplate(
+                input_variables=["statement", "reply", "linguist_analysis", "expert_analysis", "user_analysis", "event"],
+                template=for_template
+            )
+
+        for_chain = LLMChain(llm=llm, prompt=for_prompt, output_key="for_opinion")
+
+        # argument against chain
+        against_template ='''You think the attitude behind the following reply in a converation about {event} is against the following statement. Folloiwng the statement and reply are explanations of the statement and reply by various personas. Identify the top three pieces of evidence from these that best support your opinion and argue for your opinion.
+        statement: {statement}
+        reply: {reply}
+        linguist explanation: {linguist_analysis}
+        expert explanation: {expert_analysis}
+        heavy social media user explanation: {user_analysis}
+        opinion:'''
+
+        against_prompt = PromptTemplate(
+                input_variables=["statement", "reply", "linguist_analysis", "expert_analysis", "user_analysis", "event"],
+                template=against_template
+            )
+
+        against_chain = LLMChain(llm=llm, prompt=against_prompt, output_key="against_opinion")
+
+        # Final Judgement Chain
+        judgement_template ='''Determine whether the following reply in a conversation about {event} is in favor of, neutral, against, or unrelated to the following statement. 
+        statement: {statement}
+        reply: {reply}
+        Arguments that the attitude is in favor: {for_opinion}
+        Arguments that the attitude is against: {against_opinion}
+        Choose the stance from "for", "against", "neutral", or "unrelated". Answer with only the option above that is most accurate and nothing else.
+        stance:'''
+
+        judgement_prompt = PromptTemplate(
+                input_variables=["statement","reply", "for_opinion", "against_opinion", "event"],
+                template=judgement_template
+            )
+
+        judgement_chain = LLMChain(llm=llm, prompt=judgement_prompt, output_key="label")
+
+        llm_chain = SequentialChain(
+            chains=[linguist_chain, expert_chain, user_chain, for_chain, against_chain, judgement_chain],
+            input_variables = ["event", "statement", "reply"],
+            output_variables=["label"]
+        )
+
+    else:
+        # Linguist chain
+        linguist_template ='''Accurately and concisely explain the linguistic elements in the statment and how these elements affect meaning, including grammatical structure, tense and inflection, virtual speech, rhetorical devices, lexical choices and so on. Do nothing else.
+        statement: {statement}
+        explanation:'''
+
+        linguist_prompt = PromptTemplate(
+                input_variables=["statement"],
+                template=linguist_template
+            )
+
+        linguist_chain = LLMChain(llm=llm, prompt=linguist_prompt, output_key="linguist_analysis")
+
+        # expert chain
+        expert_template ='''Accurately and concisely explain the key elements contained in the following statement, such as characters, events, parties, religions, etc. Also explain their relationship with {event}. Do nothing else.
+        statement: {statement}
+        explanation:'''
+
+        expert_prompt = PromptTemplate(
+                input_variables=["statement", "event"],
+                template=expert_template
+            )
+
+        expert_chain = LLMChain(llm=llm, prompt=expert_prompt, output_key="expert_analysis")
+
+        # user chain
+        user_template ='''Analyze the following statement, focusing on the content, hashtags, Internet slang and colloquialisms, emotional tone, implied meaning, and so on. Do nothing else.
+        statement: {statement}
+        explanation:'''
+
+        user_prompt = PromptTemplate(
+                input_variables=["statement", "event"],
+                template=user_template
+            )
+
+        user_chain = LLMChain(llm=llm, prompt=user_prompt, output_key="user_analysis")
+
+        # argument for chain
+        for_template ='''You think the attitude behind the following statement is in support of {event}. Folloiwng the statement are explanations of the statement by various personas. Identify the top three pieces of evidence from these that best support your opinion and argue for your opinion.
+        statement: {statement}
+        linguist explanation: {linguist_analysis}
+        expert explanation: {expert_analysis}
+        heavy social media user explanation: {user_analysis}
+        opinion:'''
+
+        for_prompt = PromptTemplate(
+                input_variables=["statement", "linguist_analysis", "expert_analysis", "user_analysis", "event"],
+                template=for_template
+            )
+
+        for_chain = LLMChain(llm=llm, prompt=for_prompt, output_key="for_opinion")
+
+        # argument against chain
+        against_template ='''You think the attitude behind the following statement is against {event}. Folloiwng the statement are explanations of the statement by various personas. Identify the top three pieces of evidence from these that best support your opinion and argue for your opinion.
+        statement: {statement}
+        linguist explanation: {linguist_analysis}
+        expert explanation: {expert_analysis}
+        heavy social media user explanation: {user_analysis}
+        opinion:'''
+
+        against_prompt = PromptTemplate(
+                input_variables=["statement", "linguist_analysis", "expert_analysis", "user_analysis", "event"],
+                template=against_template
+            )
+
+        against_chain = LLMChain(llm=llm, prompt=against_prompt, output_key="against_opinion")
+
+        # Final Judgement Chain
+        judgement_template ='''Determine whether the following statement is in favor of, neutral, against, or unrelated to {event}. 
+        statement: {statement}
+        Arguments that the attitude is in favor: {for_opinion}
+        Arguments that the attitude is against: {against_opinion}
+        Choose the stance from "for", "against", "neutral", or "unrelated". Answer with only the option above that is most accurate and nothing else.
+        stance:'''
+
+        judgement_prompt = PromptTemplate(
+                input_variables=["statement", "for_opinion", "against_opinion", "event"],
+                template=judgement_template
+            )
+
+        judgement_chain = LLMChain(llm=llm, prompt=judgement_prompt, output_key="label")
+
+        llm_chain = SequentialChain(
+            chains=[linguist_chain, expert_chain, user_chain, for_chain, against_chain, judgement_chain],
+            input_variables = ["event", "statement"],
+            output_variables=["label"]
+        )
+
+    return llm_chain
+
 def create_llm(model, token):
     encoder_decoder_models =['google/flan-ul2', 'declare-lab/flan-alpaca'] 
 
@@ -769,7 +968,9 @@ def create_llm(model, token):
 
 if __name__ == "__main__":
     ### read in dataset 
-    file_path = "/home/jovyan/LLM-Stance-Labeling/"+DATASET+"/data_merged.csv"
+    # file_path = "/home/jovyan/LLM-Stance-Labeling/"+DATASET+"/data_merged.csv"
+    # reading in previous labels to add to them
+    file_path = "/home/jovyan/LLM-Stance-Labeling/results/"+DATASET+"_"+MODEL.split("/")[1]+".csv"
     df = pd.read_csv(file_path)
 
     # Create a sample for all examples, if desired
@@ -781,7 +982,7 @@ if __name__ == "__main__":
     llm = create_llm(MODEL, token)
 
     ### run test examples and log output
-    # What is the stance of the following social media post toward the following entity Give the stance as either for, against, or neutral. Only return the stance and no other text.
+    # What is the stance of the following social media post toward the following entity? Give the stance as either for, against, or neutral. Only return the stance and no other text.
     # What is the stance of the following social media post toward the following entity? Classify the stance as for, against, neutral, or unrelated if the post is not about the entity. Only return the stance, and no other text.
     question = '''Analyze the following social media post and determine its stance towards the provided entity. Respond with a single word: "for", "against", "neutral", or "unrelated". Only return the stance as a single word, and no other text.
     entity: U.S. Army
@@ -811,12 +1012,13 @@ if __name__ == "__main__":
     context_question_chain = create_context_question_chain(DATASET, llm)
     few_shot_chain = create_few_shot_chain(DATASET, llm)
     zero_shot_cot_chain = create_zero_shot_CoT_chain(DATASET, llm)
+    coda_chain = create_coda_chain(DATASET, llm)
 
     for run in range(NUM_RUNS):
         start_time = time.time()
 
         logger.info("------------run number {}--------------".format(run))
-
+        '''
         ## task prompt
         logger.info("\n\n running task-only prompt")
         results = []
@@ -917,7 +1119,7 @@ if __name__ == "__main__":
         # store results in dataframe
         df['few_shot_preds_raw_'+str(run)] = results
         df['few_shot_preds_'+str(run)] = y_pred
-
+        
         ## zero-shot CoT prompt
         logger.info("\n\n running zero-shot CoT prompt")
         results = []
@@ -937,6 +1139,26 @@ if __name__ == "__main__":
         # store results in dataframe
         df['zero_shot_cot_preds_raw_'+str(run)] = results
         df['zero_shot_cot_preds_'+str(run)] = y_pred
+        '''
+        ## CoDA Prompt
+        logger.info("\n\n running CoDA prompt")
+        results = []
+        for index, row in tqdm(df.iterrows()):
+            if DATASET == 'srq':
+                results.append(coda_chain.run(event=row['event'], statement=str(row['target_text']).replace('\n', ' ') , reply=str(row['response_text']).replace('\n', ' ') ))
+            else:
+                results.append(coda_chain.run(event=row['event'], statement=str(row['full_text']).replace('\n', ' ') ))
+
+        # post-process and check results
+        logger.info("raw results: {}\n".format(np.unique(results, return_counts=True)))
+        y_pred = post_process_results(results)
+        logger.info("processed results: {}\n".format(np.unique(y_pred, return_counts=True)))
+        report = classification_report(df['stance'], y_pred, zero_division=0)
+        logger.info(report)
+
+        # store results in dataframe
+        df['coda_preds_raw_'+str(run)] = results
+        df['coda_preds_'+str(run)] = y_pred
         
 
         elapsed_time = time.time() - start_time  
