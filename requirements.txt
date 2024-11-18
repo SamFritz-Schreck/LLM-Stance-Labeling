@@ -1,0 +1,18 @@
+# Core dependencies
+numpy
+pandas
+scikit-learn
+scipy
+tqdm
+matplotlib
+seaborn
+jupyter
+
+# Hugging Face and related libraries
+transformers
+datasets
+accelerate
+bitsandbytes
+peft
+trl
+huggingface_hub

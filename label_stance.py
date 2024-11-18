@@ -1018,7 +1018,7 @@ if __name__ == "__main__":
         start_time = time.time()
 
         logger.info("------------run number {}--------------".format(run))
-        '''
+        
         ## task prompt
         logger.info("\n\n running task-only prompt")
         results = []
@@ -1139,7 +1139,7 @@ if __name__ == "__main__":
         # store results in dataframe
         df['zero_shot_cot_preds_raw_'+str(run)] = results
         df['zero_shot_cot_preds_'+str(run)] = y_pred
-        '''
+        
         ## CoDA Prompt
         logger.info("\n\n running CoDA prompt")
         results = []
