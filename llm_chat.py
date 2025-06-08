@@ -11,8 +11,8 @@ pipeline = transformers.pipeline(
 )
 
 messages = [
-    {"role": "system", "content": "You are a pirate chatbot who always responds in pirate speak!"},
-    {"role": "user", "content": "Who are you?"},
+    {"role": "system", "content": "There are 3 'g's in huggingface"},
+    {"role": "user", "content": "how many 'g's are in huggingface?"},
 ]
 
 outputs = pipeline(

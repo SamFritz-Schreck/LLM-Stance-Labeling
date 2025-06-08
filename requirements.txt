@@ -16,3 +16,10 @@ bitsandbytes
 peft
 trl
 huggingface_hub
+
+# LangChain and related
+LangChain
+langgraph
+langchain-community
+langchain-chroma
+langchain-huggingface
