@@ -1,20 +1,37 @@
+import os
 import pandas as pd
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
-from langchain_chroma.vectorstores import Chroma
 from langchain_core.documents import Document
+from langchain_chroma import Chroma
 
-df = pd.read_csv("Data/raw_train_bernie.csv")
+#load train data
+bernie_df = pd.read_csv("Data/PStance/raw_train_bernie.csv")
+bernie_df["Source"] = "raw_train_bernie.csv"
 
-# Combine columns into text
-texts = df.apply(lambda row: " ".join([str(v) for v in row.values]), axis=1).tolist()
-print(texts[0:10])
+biden_df = pd.read_csv("Data/PStance/raw_train_biden.csv")
+biden_df["Source"] = "raw_train_biden.csv"
 
-# Create Document objects
-docs = [Document(page_content=text) for text in texts]
+trump_df = pd.read_csv("Data/PStance/raw_train_trump.csv")
+trump_df["Source"] = "raw_train_trump.csv"
 
-# Set up sentence-transformers MiniLM
+# Combine them all
+df = pd.concat([bernie_df, biden_df, trump_df], ignore_index=True)
+
+# Create documents with metadata
+docs = [
+    Document(
+        page_content=row["Tweet"],
+        metadata={"target": row["Target"], "stance": row["Stance"]}
+    )
+    for _, row in df.iterrows()
+]
+
+# Embed with sentence-transformers MiniLM
 embedding_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-# Create and persist Chroma vectorstore
-vectorstore = Chroma.from_documents(documents=docs, embedding=embedding_model, persist_directory="./chroma_db")
-vectorstore.persist()
+# Store in Chroma
+vectorstore = Chroma.from_documents(
+    documents=docs,
+    embedding=embedding_model,
+    persist_directory="Data/PStance/chroma_train_db"
+)
